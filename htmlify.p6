@@ -217,7 +217,9 @@ sub process-pod-source(:$kind, :$pod, :$filename, :$pod-is-complete) {
         |%type-info,
     );
 
-    find-definitions :$pod, :$origin, :url("/$kind/$filename");
+    if $kind eq "type" {
+        find-definitions :$pod, :$origin, :url("/$kind/$filename");
+    }
     find-references  :$pod, :$origin, :url("/$kind/$filename");
 }
 
