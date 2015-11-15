@@ -52,7 +52,7 @@ sub header-html ($current-selection = 'nothing selected') is cached {
             <a class="menu-item {$dir eq $current-selection ?? "selected darker-green" !! ""}"
                 href="/$dir.html">
                 { $name || $dir.wordcase }
-            </a>
+             </a>
         ]}), #"
         q[</div>];
 
@@ -100,6 +100,9 @@ sub recursive-dir($dir) {
 
 # --sparse=5: only process 1/5th of the files
 # mostly useful for performance optimizations, profiling etc.
+#
+# --only=language: (or type) - just process one part of the doc
+# tree.
 sub MAIN(
     Bool :$typegraph = False,
     Int  :$sparse,
@@ -107,6 +110,7 @@ sub MAIN(
     Bool :$search-file = True,
     Bool :$no-highlight = False,
     Bool :$no-inline-python = False,
+    Str  :$only = ''
 ) {
     say 'Creating html/ subdirectories ...';
     for flat '', <type language routine images syntax> {
@@ -115,27 +119,22 @@ sub MAIN(
 
     my $*DR = Perl6::Documentable::Registry.new;
 
-    say 'Reading type graph ...';
-    $type-graph = Perl6::TypeGraph.new-from-file('type-graph.txt');
-    my %h = $type-graph.sorted.kv.flat.reverse;
-    write-type-graph-images(:force($typegraph));
-
-    process-pod-dir 'Language', :$sparse;
-    process-pod-dir 'Type', :sorted-by{ %h{.key} // -1 }, :$sparse;
+    process-types :$typegraph, :$sparse unless $only && $only ne 'type';
+    process-language :$sparse unless $only && $only ne 'language';
 
     highlight-code-blocks(:use-inline-python(!$no-inline-python)) unless $no-highlight;
 
     say 'Composing doc registry ...';
     $*DR.compose;
+    for $*DR.lookup("type", :by<kind>).list {
+        write-type-source $_;
+    }
 
     for $*DR.lookup("language", :by<kind>).list -> $doc {
         say "Writing language document for {$doc.name} ...";
         my $pod-path = pod-path-from-url($doc.url);
         spurt "html{$doc.url}.html",
             p2h($doc.pod, 'language', pod-path => $pod-path);
-    }
-    for $*DR.lookup("type", :by<kind>).list {
-        write-type-source $_;
     }
 
     write-disambiguation-files if $disambiguation;
@@ -150,6 +149,19 @@ sub MAIN(
     if $sparse || !$search-file || !$disambiguation {
         say "This is a sparse or incomplete run. DO NOT SYNC WITH doc.perl6.org!";
     }
+}
+
+sub process-types (:$typegraph, :$sparse) {
+    say 'Reading type graph ...';
+    $type-graph = Perl6::TypeGraph.new-from-file('type-graph.txt');
+    my %h = $type-graph.sorted.kv.flat.reverse;
+    write-type-graph-images(:force($typegraph));
+
+    process-pod-dir 'Type', :sorted-by{ %h{.key} // -1 }, :$sparse
+}
+
+sub process-language (:$sparse) {
+    process-pod-dir 'Language', :$sparse
 }
 
 sub process-pod-dir($dir, :&sorted-by = &[cmp], :$sparse) {
